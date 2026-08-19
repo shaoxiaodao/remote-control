@@ -144,6 +144,26 @@ class PlatformChannelService {
     }
   }
 
+  /// 检查是否已忽略电池优化（Android only）
+  Future<bool> isIgnoringBatteryOptimizations() async {
+    try {
+      return await _controlChannel
+              .invokeMethod<bool>('isIgnoringBatteryOptimizations') ??
+          false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// 请求忽略电池优化（Android only）
+  Future<void> requestIgnoreBatteryOptimizations() async {
+    try {
+      await _controlChannel.invokeMethod('requestIgnoreBatteryOptimizations');
+    } on PlatformException catch (e) {
+      print('Request ignore battery optimizations error: ${e.message}');
+    }
+  }
+
   /// 模拟触控按下
   Future<void> simulateTouchDown(double x, double y,
       {int screenWidth = 0, int screenHeight = 0}) async {

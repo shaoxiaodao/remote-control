@@ -606,6 +606,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         },
       );
     }
+
+    // ─── 步骤 4：忽略电池优化（关键！防止锁屏后断连）───
+    final ignoringBattery = await _platform.isIgnoringBatteryOptimizations();
+    if (!ignoringBattery && mounted) {
+      await _showPermissionStep(
+        icon: Icons.battery_charging_full,
+        iconColor: Colors.amber,
+        title: '忽略电池优化',
+        description: '这是保持远程控制稳定的关键设置。不设置此项，手机锁屏后系统会自动限制网络连接和后台运行，导致远程连接断开且无法唤醒。',
+        buttonText: '前往设置',
+        onGrant: () async {
+          await _platform.requestIgnoreBatteryOptimizations();
+          return true;
+        },
+      );
+    }
+
+    // ─── 步骤 5：启动前台保活服务 ───
+    await _platform.startForegroundService();
   }
 
   /// 单步权限引导弹窗

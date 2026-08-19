@@ -76,11 +76,12 @@ class AppConfig {
   static const int maxFrameWidth = 720;
   static const int maxFrameSizeBytes = 200 * 1024;
 
-  // ─── 网络配置 ───
-  static const Duration wsReconnectDelay = Duration(seconds: 3);
-  static const Duration wsHeartbeatInterval = Duration(seconds: 10);
+  // ─── 网络配置（保活优化） ───
+  static const Duration wsReconnectDelay = Duration(seconds: 3); // 指数退避基数
+  static const Duration wsHeartbeatInterval = Duration(seconds: 10); // 心跳间隔
+  static const Duration heartbeatTimeout = Duration(seconds: 30); // 心跳超时（30s 无响应则强制重连）
   static const Duration wsConnectionTimeout = Duration(seconds: 15);
-  static const int maxReconnectAttempts = 10;
+  // 重连次数：无上限（手机可能锁屏数小时，必须持续尝试重连）
 
   // ─── UI 配置 ───
   static const Color primaryColor = Color(0xFF2196F3);

@@ -23,8 +23,14 @@
     <!-- 通知 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- 开机自启（可选，用于自动进入被控模式） -->
+    <!-- 开机自启（用于自动进入被控模式） -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- 电池优化白名单（防止 Doze 模式杀进程） -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- 前台服务 dataSync 类型（Android 14+） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- 系统设置读取 -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
@@ -78,7 +84,19 @@
         <service
             android:name=".RemoteControlForegroundService"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
+            android:foregroundServiceType="mediaProjection|dataSync" />
+
+        <!-- ═══ 开机自启广播接收器 ═══ -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
 
         <!-- Flutter 元数据 -->
         <meta-data

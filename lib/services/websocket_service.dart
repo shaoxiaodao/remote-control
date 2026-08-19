@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../config/app_config.dart';
@@ -36,13 +37,21 @@ class MessageType {
 }
 
 /// WebSocket 信令与数据中继服务
+///
+/// 保活策略（针对长时间锁屏场景优化）：
+/// 1. 指数退避重连：3s → 6s → 12s → 24s → 48s → 60s（上限），永不放弃
+/// 2. 心跳超时检测：如果 N 秒没收到 pong，强制断开并重连
+/// 3. 随机抖动：避免多个设备同时重连导致服务器雪崩
+/// 4. 无限重试：手机锁屏可能数小时，必须持续尝试
 class WebSocketService {
   WebSocketChannel? _channel;
   StreamSubscription? _streamSub; // 当前连接的流订阅，防止重复
   Timer? _heartbeatTimer;
+  Timer? _heartbeatTimeoutTimer;
   Timer? _reconnectTimer;
   int _reconnectAttempts = 0;
   bool _intentionalDisconnect = false;
+  final _random = Random();
 
   // ─── 事件流 ───
   final _messageController = StreamController<Map<String, dynamic>>.broadcast();
@@ -100,8 +109,9 @@ class WebSocketService {
         onDone: _onDone,
       );
 
-      // 启动心跳
+      // 启动心跳和超时检测
       _startHeartbeat();
+      _startHeartbeatTimeout();
       return true;
     } catch (e) {
       _state = WsConnectionState.error;
@@ -115,6 +125,7 @@ class WebSocketService {
   void disconnect() {
     _intentionalDisconnect = true;
     _heartbeatTimer?.cancel();
+    _heartbeatTimeoutTimer?.cancel();
     _reconnectTimer?.cancel();
     _streamSub?.cancel();
     _streamSub = null;
@@ -129,6 +140,7 @@ class WebSocketService {
     _streamSub?.cancel();
     _streamSub = null;
     _heartbeatTimer?.cancel();
+    _heartbeatTimeoutTimer?.cancel();
     try {
       _channel?.sink.close();
     } catch (_) {}
@@ -211,6 +223,10 @@ class WebSocketService {
     if (data is String) {
       try {
         final message = jsonDecode(data) as Map<String, dynamic>;
+        // 收到 pong 时重置心跳超时计时器
+        if (message['type'] == MessageType.pong) {
+          _startHeartbeatTimeout();
+        }
         _messageController.add(message);
       } catch (e) {
         // ignore parse errors
@@ -236,6 +252,7 @@ class WebSocketService {
     }
   }
 
+  /// 启动心跳：每 10 秒发送一次 ping
   void _startHeartbeat() {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(AppConfig.wsHeartbeatInterval, (_) {
@@ -246,12 +263,50 @@ class WebSocketService {
     });
   }
 
+  /// 心跳超时检测
+  ///
+  /// 如果超过 [AppConfig.heartbeatTimeout] 没收到任何数据，
+  /// 说明连接可能已断（Doze 模式下 TCP 连接可能被系统静默关闭），
+  /// 此时主动断开并重连，而不是傻等。
+  void _startHeartbeatTimeout() {
+    _heartbeatTimeoutTimer?.cancel();
+    _heartbeatTimeoutTimer = Timer(AppConfig.heartbeatTimeout, () {
+      if (_state == WsConnectionState.connected && !_intentionalDisconnect) {
+        // 超时了，强制断开并重连
+        _cleanupChannel();
+        _state = WsConnectionState.disconnected;
+        _connectionStateController.add(_state);
+        _scheduleReconnect();
+      }
+    });
+  }
+
+  /// 指数退避重连
+  ///
+  /// 策略：
+  /// - 基础延迟：3 秒
+  /// - 指数增长：3s, 6s, 12s, 24s, 48s, 60s (上限)
+  /// - 随机抖动：±20%，避免多个设备同时重连
+  /// - 永不放弃：无限重试直到连接成功或用户手动断开
+  ///
+  /// 这样即使手机锁屏 8 小时后解锁，也能在几十秒内重新连上服务器。
   void _scheduleReconnect() {
     if (_intentionalDisconnect) return;
-    if (_reconnectAttempts >= AppConfig.maxReconnectAttempts) return;
 
+    _heartbeatTimer?.cancel();
+    _heartbeatTimeoutTimer?.cancel();
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(AppConfig.wsReconnectDelay, () {
+
+    // 指数退避：baseDelay * 2^attempts，上限 60 秒
+    final baseDelayMs = AppConfig.wsReconnectDelay.inMilliseconds;
+    final expDelay = baseDelayMs * pow(2, min(_reconnectAttempts, 5)).toInt();
+    final cappedDelay = expDelay.clamp(baseDelayMs, 60000); // 上限 60s
+
+    // 添加 ±20% 随机抖动
+    final jitter = (cappedDelay * 0.2 * (_random.nextDouble() * 2 - 1)).toInt();
+    final finalDelay = Duration(milliseconds: cappedDelay + jitter);
+
+    _reconnectTimer = Timer(finalDelay, () {
       _reconnectAttempts++;
       if (_deviceId != null) {
         connect(_deviceId!);
