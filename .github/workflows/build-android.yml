@@ -31,14 +31,15 @@ jobs:
 
       - name: Setup Gradle wrapper
         run: |
-          # Download gradle-wrapper.jar if missing
-          if [ ! -f android/gradle/wrapper/gradle-wrapper.jar ]; then
-            echo "Downloading gradle-wrapper.jar..."
-            curl -sL -o android/gradle/wrapper/gradle-wrapper.jar \
-              "https://github.com/gradle/gradle/raw/v8.4.0/gradle/wrapper/gradle-wrapper.jar"
+          # Generate gradle-wrapper.jar using pre-installed Gradle on the runner
+          cd android
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "Generating gradle-wrapper.jar via gradle wrapper command..."
+            gradle wrapper --gradle-version 8.4
           fi
-          chmod +x android/gradlew
-          ls -la android/gradle/wrapper/
+          chmod +x gradlew
+          ls -la gradle/wrapper/
+          cd ..
 
       - name: Get dependencies
         run: flutter pub get
