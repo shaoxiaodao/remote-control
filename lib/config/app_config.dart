@@ -11,9 +11,9 @@ class AppConfig {
   AppConfig._();
 
   // ─── 服务器默认值（可被运行时覆盖） ───
-  static const String defaultHost = ''; // 留空表示未配置
-  static const int defaultPort = 8080;
-  static const bool defaultUseSSL = false;
+  static const String defaultHost = 'bill-shopper-worked-existence.trycloudflare.com';
+  static const int defaultPort = 443;
+  static const bool defaultUseSSL = true;
 
   // ─── 运行时配置（通过 SharedPreferences 持久化） ───
   static String _runtimeHost = '';
