@@ -1,0 +1,17 @@
+{
+  "name": "remote-control-relay",
+  "version": "1.0.0",
+  "description": "远程控制中继服务器 - WebSocket 信令与数据转发",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0",
+    "uuid": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

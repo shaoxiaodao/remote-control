@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  无障碍服务配置
+
+  此服务用于模拟触控操作（tap/swipe/scroll/按键）。
+  用户需要在"设置 > 无障碍"中手动开启此服务。
+
+  关键配置：
+  - canPerformGestures: true → 允许执行手势（dispatchGesture）
+  - canRequestFilterKeyEvents: true → 允许拦截按键
+  - accessibilityFlags: flagDefault → 接收默认事件
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeAllMask"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagRequestFilterKeyEvents"
+    android:canPerformGestures="true"
+    android:canRequestFilterKeyEvents="true"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/accessibility_service_description"
+    android:notificationTimeout="100"
+    android:settingsActivity="com.remotecontrol.app.MainActivity" />

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">远程控制</string>
+    <string name="accessibility_service_description">远程控制触控服务：允许远程设备模拟触控操作（点击、滑动、滚动）和按键操作（返回、主页、最近任务）。开启后，远程连接的设备可以控制本手机的屏幕。</string>
+</resources>

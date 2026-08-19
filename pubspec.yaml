@@ -1,0 +1,35 @@
+name: remote_control
+description: 手机远程控制App - 类似ToDesk的手机远程控制解决方案
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  provider: ^6.1.1
+  web_socket_channel: ^2.4.0
+  uuid: ^4.2.1
+  shared_preferences: ^2.2.2
+  permission_handler: ^11.1.0
+  wakelock_plus: ^1.1.4
+  connectivity_plus: ^5.0.2
+  http: ^1.1.2
+  path_provider: ^2.1.1
+  device_info_plus: ^9.1.1
+  flutter_svg: ^1.1.6
+  cached_network_image: ^3.3.0
+  intl: ^0.18.1
+  crypto: ^3.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
+  assets: []
