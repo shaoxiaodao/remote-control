@@ -15,10 +15,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.4'
 
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
@@ -29,14 +34,10 @@ jobs:
       - name: Flutter doctor
         run: flutter doctor -v
 
-      - name: Setup Gradle wrapper
+      - name: Generate Gradle wrapper
         run: |
-          # Generate gradle-wrapper.jar using pre-installed Gradle on the runner
           cd android
-          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-            echo "Generating gradle-wrapper.jar via gradle wrapper command..."
-            gradle wrapper --gradle-version 8.4
-          fi
+          gradle wrapper --gradle-version 8.4
           chmod +x gradlew
           ls -la gradle/wrapper/
           cd ..
