@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../providers/app_state_provider.dart';
 import '../config/app_config.dart';
 import '../services/websocket_service.dart';
+import '../services/platform_channel_service.dart';
 import '../utils/device_id_generator.dart';
 import 'controller_page.dart';
 import 'controlled_page.dart';
@@ -18,13 +20,31 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
+  final _platform = PlatformChannelService.instance;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initialize();
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // 从设置页返回时刷新无障碍状态
+      final provider = context.read<AppStateProvider>();
+      provider.refreshAccessibility();
+    }
   }
 
   Future<void> _initialize() async {
@@ -34,6 +54,11 @@ class _HomePageState extends State<HomePage> {
       await provider.initialize();
       if (!mounted) return;
       await provider.connectToServer();
+      // 启动状态监听（无障碍服务开关变化时自动刷新）
+      _platform.startStatusListener();
+      // 初始化完成后弹出权限引导
+      if (!mounted) return;
+      await _showPermissionSetup();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -524,6 +549,132 @@ class _HomePageState extends State<HomePage> {
       context,
       MaterialPageRoute(
         builder: (_) => const ControlledPage(),
+      ),
+    );
+  }
+
+  /// 权限引导弹窗 —— 应用启动后自动弹出
+  /// 依次引导用户授予：通知权限、无障碍服务、修改系统设置
+  Future<void> _showPermissionSetup() async {
+    // ─── 步骤 1：通知权限（Android 13+）───
+    final notifStatus = await Permission.notification.status;
+    if (!notifStatus.isGranted && mounted) {
+      final granted = await _showPermissionStep(
+        icon: Icons.notifications_active,
+        iconColor: Colors.blue,
+        title: '通知权限',
+        description: '远程控制需要显示常驻通知以保持后台服务运行，防止被系统回收。',
+        buttonText: '授予通知权限',
+        onGrant: () async {
+          final status = await Permission.notification.request();
+          return status.isGranted;
+        },
+      );
+      if (granted != true) return; // 用户关闭了弹窗
+    }
+
+    // ─── 步骤 2：无障碍服务 ───
+    final accessibilityEnabled = await _platform.isAccessibilityServiceEnabled();
+    if (!accessibilityEnabled && mounted) {
+      final granted = await _showPermissionStep(
+        icon: Icons.accessibility_new,
+        iconColor: Colors.green,
+        title: '无障碍服务',
+        description: '开启无障碍服务后，远程设备可以模拟触控操作（点击、滑动、滚动）和系统按键（返回、主页、最近任务）。',
+        buttonText: '前往开启',
+        onGrant: () async {
+          await _platform.openAccessibilitySettings();
+          // 用户会在系统设置中操作，返回后通过 didChangeAppLifecycleState 刷新
+          return true;
+        },
+      );
+      if (granted != true) return;
+    }
+
+    // ─── 步骤 3：修改系统设置 ───
+    final canWrite = await _platform.canWriteSettings();
+    if (!canWrite && mounted) {
+      await _showPermissionStep(
+        icon: Icons.settings_suggest,
+        iconColor: Colors.orange,
+        title: '修改系统设置',
+        description: '允许修改系统设置后，远程设备可以控制屏幕亮度、屏幕超时等系统级选项。',
+        buttonText: '前往授权',
+        onGrant: () async {
+          await _platform.requestWriteSettings();
+          return true;
+        },
+      );
+    }
+  }
+
+  /// 单步权限引导弹窗
+  /// 返回 true 表示用户点击了按钮，null/false 表示用户关闭了弹窗
+  Future<bool?> _showPermissionStep({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String description,
+    required String buttonText,
+    required Future<bool> Function() onGrant,
+  }) async {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppConfig.surfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: iconColor, size: 26),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(color: Colors.white, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          description,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.7),
+            fontSize: 14,
+            height: 1.6,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              '稍后再说',
+              style: TextStyle(color: Colors.white.withOpacity(0.5)),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await onGrant();
+              if (ctx.mounted) Navigator.pop(ctx, true);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: iconColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: Text(buttonText),
+          ),
+        ],
       ),
     );
   }

@@ -66,6 +66,16 @@ class MainActivity : FlutterActivity() {
                         openAccessibilitySettings()
                         result.success(null)
                     }
+                    "canWriteSettings" -> {
+                        result.success(Settings.System.canWrite(this@MainActivity))
+                    }
+                    "requestWriteSettings" -> {
+                        val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
+                        intent.data = android.net.Uri.parse("package:$packageName")
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(intent)
+                        result.success(null)
+                    }
                     "touchDown" -> {
                         val x = call.argument<Double>("x")?.toFloat() ?: 0f
                         val y = call.argument<Double>("y")?.toFloat() ?: 0f

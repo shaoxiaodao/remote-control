@@ -126,6 +126,24 @@ class PlatformChannelService {
     }
   }
 
+  /// 检查是否有修改系统设置的权限（Android only）
+  Future<bool> canWriteSettings() async {
+    try {
+      return await _controlChannel.invokeMethod<bool>('canWriteSettings') ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// 打开"修改系统设置"权限页面（Android only）
+  Future<void> requestWriteSettings() async {
+    try {
+      await _controlChannel.invokeMethod('requestWriteSettings');
+    } on PlatformException catch (e) {
+      print('Request write settings error: ${e.message}');
+    }
+  }
+
   /// 模拟触控按下
   Future<void> simulateTouchDown(double x, double y,
       {int screenWidth = 0, int screenHeight = 0}) async {
