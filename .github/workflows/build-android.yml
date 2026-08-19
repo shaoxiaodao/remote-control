@@ -29,6 +29,17 @@ jobs:
       - name: Flutter doctor
         run: flutter doctor -v
 
+      - name: Setup Gradle wrapper
+        run: |
+          # Download gradle-wrapper.jar if missing
+          if [ ! -f android/gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "Downloading gradle-wrapper.jar..."
+            curl -sL -o android/gradle/wrapper/gradle-wrapper.jar \
+              "https://github.com/gradle/gradle/raw/v8.4.0/gradle/wrapper/gradle-wrapper.jar"
+          fi
+          chmod +x android/gradlew
+          ls -la android/gradle/wrapper/
+
       - name: Get dependencies
         run: flutter pub get
 
