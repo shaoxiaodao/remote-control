@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: remote-control-relay
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
