@@ -1,0 +1,8 @@
+{
+  "deploy": {
+    "project": "remote-control-relay",
+    "exclude": ["**/node_modules", "**/android", "**/ios", "**/.dart_tool", "**/build"],
+    "include": ["deploy/**"],
+    "entryPoint": "deploy/main.ts"
+  }
+}
