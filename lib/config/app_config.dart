@@ -11,7 +11,7 @@ class AppConfig {
   AppConfig._();
 
   // ─── 服务器默认值（可被运行时覆盖） ───
-  static const String defaultHost = 'maintaining-platinum-solution-madrid.trycloudflare.com';
+  static const String defaultHost = 'remote-control-m07rdq5pa6rm.shaoxiaodao.deno.net';
   static const int defaultPort = 443;
   static const bool defaultUseSSL = true;
 
