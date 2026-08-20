@@ -70,18 +70,18 @@ class AppConfig {
     await prefs.remove('server_use_ssl');
   }
 
-  // ─── 视频/图像配置 ───
-  static const int screenCaptureFps = 15;
-  static const int jpegQuality = 50;
-  static const int maxFrameWidth = 720;
-  static const int maxFrameSizeBytes = 200 * 1024;
+  // ─── 视频/图像配置（针对远程网络优化） ───
+  static const int screenCaptureFps = 10;
+  static const int jpegQuality = 40;
+  static const int maxFrameWidth = 540;
+  static const int maxFrameSizeBytes = 150 * 1024;
 
-  // ─── 网络配置（保活优化） ───
-  static const Duration wsReconnectDelay = Duration(seconds: 3); // 指数退避基数
-  static const Duration wsHeartbeatInterval = Duration(seconds: 10); // 心跳间隔
-  static const Duration heartbeatTimeout = Duration(seconds: 30); // 心跳超时（30s 无响应则强制重连）
-  static const Duration wsConnectionTimeout = Duration(seconds: 15);
-  // 重连次数：无上限（手机可能锁屏数小时，必须持续尝试重连）
+  // ─── 网络配置（速度优化） ───
+  static const Duration wsReconnectDelay = Duration(milliseconds: 1500); // 指数退避基数 1.5s
+  static const Duration wsHeartbeatInterval = Duration(seconds: 5); // 心跳 5s（更快检测断连）
+  static const Duration heartbeatTimeout = Duration(seconds: 15); // 15s 无 pong 即强制重连
+  static const Duration wsConnectionTimeout = Duration(seconds: 8); // 连接超时 8s
+  // 重连次数：无上限
 
   // ─── UI 配置 ───
   static const Color primaryColor = Color(0xFF2196F3);

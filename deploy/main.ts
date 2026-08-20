@@ -130,8 +130,8 @@ class SessionManager {
 const deviceManager = new DeviceManager();
 const sessionManager = new SessionManager();
 const handledDisconnects = new Set<string>();
-const HEARTBEAT_INTERVAL = 30000;
-const DEVICE_TIMEOUT = 60000;
+const HEARTBEAT_INTERVAL = 15000;
+const DEVICE_TIMEOUT = 30000;
 
 function safeSend(ws: WebSocket | null, data: any) {
   try {
