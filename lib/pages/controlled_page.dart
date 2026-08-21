@@ -1,11 +1,9 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/app_state_provider.dart';
 import '../config/app_config.dart';
 import '../models/session.dart';
-import '../services/websocket_service.dart';
 import '../services/platform_channel_service.dart';
 import '../utils/device_id_generator.dart';
 
@@ -20,8 +18,6 @@ class ControlledPage extends StatefulWidget {
 class _ControlledPageState extends State<ControlledPage>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
-  StreamSubscription? _messageSub;
-  bool _showingDialog = false; // 防止多个对话框堆叠
   bool _enteredControlledMode = false; // 防止重复进入
 
   @override
@@ -43,29 +39,11 @@ class _ControlledPageState extends State<ControlledPage>
 
     final provider = context.read<AppStateProvider>();
     await provider.enterControlledMode();
-
-    // 监听连接请求（含错误处理）
-    _messageSub = provider.wsService.messageStream.listen(
-      (message) {
-        final type = message['type'] as String?;
-        if (type == MessageType.requestConnect) {
-          final fromId = message['fromId'] as String?;
-          if (fromId != null && mounted && !_showingDialog) {
-            _showingDialog = true;
-            _showConnectionRequestDialog(fromId, message['fromName'] as String? ?? '未知设备');
-          }
-        }
-      },
-      onError: (_) {
-        // WebSocket 错误不中断监听
-      },
-    );
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
-    _messageSub?.cancel();
     super.dispose();
   }
 
@@ -455,66 +433,6 @@ class _ControlledPageState extends State<ControlledPage>
           ),
       ],
     );
-  }
-
-  void _showConnectionRequestDialog(
-      String fromId, String fromName) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppConfig.surfaceColor,
-        title: Row(
-          children: [
-            const Icon(Icons.person_add, color: AppConfig.primaryColor),
-            const SizedBox(width: 8),
-            const Text(
-              '连接请求',
-              style: TextStyle(color: Colors.white),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '设备 "$fromName" 请求远程控制你的设备',
-              style: const TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'ID: $fromId',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.5),
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              context.read<AppStateProvider>().rejectConnection(fromId);
-            },
-            child: const Text('拒绝'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              context.read<AppStateProvider>().acceptConnection(fromId);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppConfig.primaryColor,
-            ),
-            child: const Text('接受'),
-          ),
-        ],
-      ),
-    ).then((_) {
-      _showingDialog = false;
-    });
   }
 
   void _exitControlledMode() {

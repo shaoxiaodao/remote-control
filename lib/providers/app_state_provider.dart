@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,6 +31,13 @@ class AppStateProvider extends ChangeNotifier {
   int _frameSequence = 0;
   Timer? _fpsTimer;
   int _frameCount = 0;
+
+  // ─── 断线重连状态 ───
+  AppMode? _previousMode;
+  String? _remoteDeviceId;
+  Timer? _streamRetryTimer;
+  int _streamRetryCount = 0;
+  final Set<String> _trustedDevices = {};
 
   // ─── 流订阅（用于 dispose 时取消） ───
   StreamSubscription? _wsMsgSub;
@@ -175,6 +183,10 @@ class AppStateProvider extends ChangeNotifier {
     _session?.reset();
     _mode = AppMode.idle;
     _latestFrame = null;
+    _previousMode = null;
+    _remoteDeviceId = null;
+    _streamRetryTimer?.cancel();
+    _streamRetryCount = 0;
     _statusMessage = '已断开远程连接';
     notifyListeners();
   }
@@ -186,7 +198,11 @@ class AppStateProvider extends ChangeNotifier {
   /// 进入被控等待模式
   Future<void> enterControlledMode() async {
     _mode = AppMode.controlled;
+    _previousMode = null; // 新进入被控，不需要重连
     _statusMessage = '等待远程控制连接...';
+
+    // 加载可信设备列表
+    await _loadTrustedDevices();
 
     // 启动前台服务保活
     await _platform.startForegroundService();
@@ -202,6 +218,8 @@ class AppStateProvider extends ChangeNotifier {
     await _platform.keepScreenOn(false);
     await _platform.stopScreenCapture();
     _mode = AppMode.idle;
+    _previousMode = null;
+    _remoteDeviceId = null;
     _statusMessage = '已退出被控模式';
     notifyListeners();
   }
@@ -254,6 +272,11 @@ class AppStateProvider extends ChangeNotifier {
   // ═══════════════════════════════════════════
 
   Future<void> _startStreaming(String targetId) async {
+    // 如果已经在投屏，先停止旧的捕获（处理重复 start_stream）
+    if (_session?.state == SessionState.streaming) {
+      await _platform.stopScreenCapture();
+    }
+
     final success = await _platform.startScreenCapture(
       fps: AppConfig.screenCaptureFps,
       quality: AppConfig.jpegQuality,
@@ -267,6 +290,14 @@ class AppStateProvider extends ChangeNotifier {
       notifyListeners();
     } else {
       _statusMessage = '屏幕捕获启动失败';
+      // 通知控制端投屏失败
+      if (_session?.remoteDevice != null) {
+        _wsService.sendMessage({
+          'type': MessageType.streamError,
+          'targetId': _session!.remoteDevice!.deviceId,
+          'reason': 'screen_capture_failed',
+        });
+      }
       notifyListeners();
     }
   }
@@ -303,13 +334,25 @@ class AppStateProvider extends ChangeNotifier {
       switch (state) {
         case WsConnectionState.connected:
           _statusMessage = '已连接到服务器';
+          // 断线重连：恢复之前的模式并重新建立连接
+          _attemptAutoReconnect();
           break;
         case WsConnectionState.connecting:
           _statusMessage = '正在连接...';
           break;
         case WsConnectionState.disconnected:
-          _statusMessage = '连接已断开';
-          _mode = AppMode.idle;
+          _statusMessage = '连接已断开，正在重连...';
+          // 保存当前模式用于断线重连（不重置！）
+          if (_mode != AppMode.idle) {
+            _previousMode = _mode;
+            if (_session?.remoteDevice != null) {
+              _remoteDeviceId = _session!.remoteDevice!.deviceId;
+            }
+            // 被控端：停止投屏等待重连
+            if (_mode == AppMode.controlled) {
+              _platform.stopScreenCapture();
+            }
+          }
           break;
         case WsConnectionState.error:
           _statusMessage = '连接错误';
@@ -382,6 +425,7 @@ class AppStateProvider extends ChangeNotifier {
       case MessageType.connectRejected:
         _statusMessage = '连接被拒绝: ${message['reason'] ?? ''}';
         _mode = AppMode.idle;
+        _previousMode = null;
         break;
 
       case MessageType.startStream:
@@ -422,6 +466,11 @@ class AppStateProvider extends ChangeNotifier {
         }
         break;
 
+      case MessageType.streamError:
+        _statusMessage = '投屏失败: ${message['reason'] ?? '未知错误'}';
+        _streamRetryTimer?.cancel();
+        break;
+
       case MessageType.error:
         _statusMessage = '服务器错误: ${message['message'] ?? ''}';
         break;
@@ -430,22 +479,46 @@ class AppStateProvider extends ChangeNotifier {
   }
 
   void _onConnectionRequest(Map<String, dynamic> message) {
-    // 在 UI 层会弹出对话框
-    // 这里仅存储请求者信息
     final fromId = message['fromId'] as String?;
     if (fromId != null) {
+      // 自动接受可信设备的连接请求
+      if (_trustedDevices.contains(fromId)) {
+        _statusMessage = '自动接受可信设备连接...';
+        acceptConnection(fromId);
+        return;
+      }
       _statusMessage = '收到来自 $fromId 的连接请求';
+
+      // 首次连接的设备自动加入可信列表（不再需要反复确认）
+      _trustedDevices.add(fromId);
+      _saveTrustedDevices();
     }
   }
 
   void _onConnectionAccepted(Map<String, dynamic> message) {
+    final fromId = message['fromId'] as String?;
+
+    // 如果 session 为 null（断线重连后），重新创建
+    if (_session == null && _localDevice != null) {
+      _session = RemoteSession(
+        sessionId: const Uuid().v4(),
+        localDevice: _localDevice!,
+        state: SessionState.connecting,
+      );
+    }
+
     if (_session != null) {
       _session!.state = SessionState.connected;
+      _latestFrame = null;
       _statusMessage = '连接已建立，开始投屏...';
-      // 请求对方开始投屏
-      final fromId = message['fromId'] as String?;
+
       if (fromId != null) {
         _wsService.startStream(fromId);
+        _remoteDeviceId = fromId;
+
+        // 启动投屏重试计时器（如果 10 秒没收到帧，自动重试）
+        _streamRetryCount = 0;
+        _startStreamRetryTimer(fromId);
       }
     }
   }
@@ -456,6 +529,9 @@ class AppStateProvider extends ChangeNotifier {
       try {
         _latestFrame = base64Decode(frame);
         _session?.framesReceived++;
+        // 收到帧说明投屏正常，取消重试计时器
+        _streamRetryTimer?.cancel();
+        _streamRetryTimer = null;
         // 计算帧延迟
         final timestamp = message['timestamp'] as int? ?? 0;
         if (timestamp > 0 && _session != null) {
@@ -520,10 +596,14 @@ class AppStateProvider extends ChangeNotifier {
   }
 
   void _onRemoteDisconnect(Map<String, dynamic> message) {
+    final reason = message['reason'] as String? ?? '设备已离线';
+    // 保存状态用于自动重连
+    _previousMode = _mode;
+    _remoteDeviceId = _session?.remoteDevice?.deviceId;
     _session?.reset();
-    _mode = AppMode.idle;
     _latestFrame = null;
-    _statusMessage = '远程设备已断开';
+    _streamRetryTimer?.cancel();
+    _statusMessage = '远程设备已断开，等待重连...';
   }
 
   Future<void> _checkAccessibility() async {
@@ -536,6 +616,90 @@ class AppStateProvider extends ChangeNotifier {
     await _checkAccessibility();
   }
 
+  // ═══════════════════════════════════════════
+  //  断线自动重连
+  // ═══════════════════════════════════════════
+
+  /// WebSocket 重连成功后，自动恢复之前的会话
+  void _attemptAutoReconnect() {
+    if (_previousMode == AppMode.controlling && _remoteDeviceId != null) {
+      // 控制端：自动重新连接到之前的被控设备
+      final targetId = _remoteDeviceId!;
+      _previousMode = null;
+
+      // 确认目标设备仍在线
+      if (_onlineDevices.any((d) => d.deviceId == targetId)) {
+        _statusMessage = '正在自动重连...';
+        _mode = AppMode.controlling;
+        _session = RemoteSession(
+          sessionId: const Uuid().v4(),
+          localDevice: _localDevice!,
+          state: SessionState.connecting,
+        );
+        _wsService.requestConnect(targetId);
+        notifyListeners();
+      }
+    } else if (_previousMode == AppMode.controlled) {
+      // 被控端：恢复被控模式，等待控制端重新连接
+      _previousMode = null;
+      _mode = AppMode.controlled;
+      _statusMessage = '已重连，等待控制端连接...';
+      notifyListeners();
+    }
+  }
+
+  /// 投屏重试计时器：如果 N 秒没收到帧，自动重新请求投屏
+  void _startStreamRetryTimer(String targetId) {
+    _streamRetryTimer?.cancel();
+    _streamRetryTimer = Timer(const Duration(seconds: 10), () {
+      // 如果还没有收到帧且仍在连接状态，重试
+      if (_latestFrame == null &&
+          _session != null &&
+          _session!.state == SessionState.connected &&
+          _mode == AppMode.controlling) {
+        if (_streamRetryCount < 5) {
+          _streamRetryCount++;
+          _statusMessage = '等待屏幕画面，正在重试($_streamRetryCount/5)...';
+          _wsService.startStream(targetId);
+          _startStreamRetryTimer(targetId); // 继续重试
+          notifyListeners();
+        } else {
+          _statusMessage = '无法获取远程屏幕，请检查对方是否已授权';
+          notifyListeners();
+        }
+      }
+    });
+  }
+
+  /// 手动重试投屏（UI 调用）
+  void retryStream() {
+    if (_session?.remoteDevice != null && _mode == AppMode.controlling) {
+      _latestFrame = null;
+      _session!.state = SessionState.connected;
+      _streamRetryCount = 0;
+      _wsService.startStream(_session!.remoteDevice!.deviceId);
+      _startStreamRetryTimer(_session!.remoteDevice!.deviceId);
+      _statusMessage = '重新请求屏幕画面...';
+      notifyListeners();
+    }
+  }
+
+  // ═══════════════════════════════════════════
+  //  可信设备管理
+  // ═══════════════════════════════════════════
+
+  Future<void> _loadTrustedDevices() async {
+    final prefs = await SharedPreferences.getInstance();
+    final devices = prefs.getStringList('trusted_devices') ?? [];
+    _trustedDevices.clear();
+    _trustedDevices.addAll(devices);
+  }
+
+  Future<void> _saveTrustedDevices() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('trusted_devices', _trustedDevices.toList());
+  }
+
   @override
   void dispose() {
     _wsMsgSub?.cancel();
@@ -543,7 +707,7 @@ class AppStateProvider extends ChangeNotifier {
     _frameSub?.cancel();
     _wsService.dispose();
     _fpsTimer?.cancel();
-    // 注意：不调用 _platform.dispose()，因为它是单例
+    _streamRetryTimer?.cancel();
     super.dispose();
   }
 }

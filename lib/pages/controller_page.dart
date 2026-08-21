@@ -26,22 +26,13 @@ class _ControllerPageState extends State<ControllerPage> {
   void initState() {
     super.initState();
     _scheduleHideControls();
-    // 强制横屏
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    // 保持竖屏，使用沉浸式状态栏
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
   @override
   void dispose() {
     _hideTimer?.cancel();
-    // 恢复竖屏
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
@@ -111,7 +102,7 @@ class _ControllerPageState extends State<ControllerPage> {
                 if (frame == null &&
                     session != null &&
                     session.state == SessionState.connected)
-                  _buildWaitingOverlay(),
+                  _buildWaitingOverlay(provider),
               ],
             );
           },
@@ -358,7 +349,7 @@ class _ControllerPageState extends State<ControllerPage> {
     );
   }
 
-  Widget _buildWaitingOverlay() {
+  Widget _buildWaitingOverlay(AppStateProvider provider) {
     return Container(
       color: Colors.black.withOpacity(0.8),
       child: Center(
@@ -372,7 +363,8 @@ class _ControllerPageState extends State<ControllerPage> {
             ),
             const SizedBox(height: 16),
             Text(
-              '等待屏幕画面...',
+              provider.statusMessage,
+              textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withOpacity(0.8),
                 fontSize: 16,
@@ -380,10 +372,27 @@ class _ControllerPageState extends State<ControllerPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              '远程设备正在授权屏幕捕获',
+              '远程设备可能未授权屏幕捕获',
               style: TextStyle(
                 color: Colors.white.withOpacity(0.4),
                 fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () => provider.retryStream(),
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('重试'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppConfig.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ],

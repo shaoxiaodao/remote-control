@@ -34,6 +34,7 @@ class MessageType {
   // ─── 系统消息 ───
   static const String error = 'error';
   static const String disconnect = 'disconnect';
+  static const String streamError = 'stream_error';
 }
 
 /// WebSocket 信令与数据中继服务
