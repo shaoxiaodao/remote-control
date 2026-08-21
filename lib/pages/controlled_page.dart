@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/app_state_provider.dart';
 import '../config/app_config.dart';
 import '../models/session.dart';
+import '../services/websocket_service.dart';
 import '../services/platform_channel_service.dart';
 import '../utils/device_id_generator.dart';
 
